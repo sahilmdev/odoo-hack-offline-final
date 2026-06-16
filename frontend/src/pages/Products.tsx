@@ -6,7 +6,7 @@ import Layout from '@/components/layout/Layout';
 import ProductCard from '@/components/products/ProductCard';
 import { Button } from '@/components/ui/button';
 import { productTypes, materials } from '@/data/products';
-import { api } from '@/lib/api';
+import { api, API_URL } from '@/lib/api';
 import { toast } from 'sonner';
 
 // Define the shape of data coming from Python
@@ -95,12 +95,20 @@ const Products = () => {
         
         // Map backend data to frontend UI structure
         const mappedProducts: Product[] = res.data.map((p) => {
+          // Helper to make image URL absolute
+          const makeAbsolute = (imgPath: string) => {
+            if (imgPath.startsWith('http://') || imgPath.startsWith('https://')) {
+              return imgPath;
+            }
+            return `${API_URL}${imgPath.startsWith('/') ? imgPath : '/' + imgPath}`;
+          };
+
           // Parse images from comma-separated string or use image_url
           let imageList: string[] = [];
           if (p.images) {
-            imageList = p.images.split(',').map(img => img.trim()).filter(Boolean);
+            imageList = p.images.split(',').map(img => makeAbsolute(img.trim())).filter(Boolean);
           } else if (p.image_url) {
-            imageList = [p.image_url];
+            imageList = [makeAbsolute(p.image_url)];
           }
           
           // Fallback to placeholder if no images

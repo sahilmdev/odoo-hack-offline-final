@@ -3,16 +3,116 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ProductCard from '@/components/products/ProductCard';
-import { products } from '@/data/products';
+import { api, API_URL } from '@/lib/api';
+
+interface BackendProduct {
+  id: number;
+  name: string;
+  description?: string;
+  price: number;
+  current_stock: number;
+  category?: string;
+  image_url?: string;
+  images?: string;
+  version_id?: number;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  tax: number;
+  category: 'men' | 'women' | 'children';
+  type: 'shirts' | 'pants' | 'kurtas' | 'dresses' | 'jackets';
+  material: 'cotton' | 'silk' | 'linen' | 'wool' | 'polyester';
+  colors: string[];
+  sizes: string[];
+  stock: number;
+  images: string[];
+  featured: boolean;
+  published: boolean;
+}
+
+const mapCategory = (backendCategory?: string): 'men' | 'women' | 'children' => {
+  if (!backendCategory) return 'men';
+  const lower = backendCategory.toLowerCase();
+  if (lower.includes('women') || lower.includes('woman')) return 'women';
+  if (lower.includes('kid') || lower.includes('child')) return 'children';
+  return 'men';
+};
+
+const mapType = (backendCategory?: string): 'shirts' | 'pants' | 'kurtas' | 'dresses' | 'jackets' => {
+  if (!backendCategory) return 'shirts';
+  const lower = backendCategory.toLowerCase();
+  if (lower.includes('kurta') || lower.includes('ethnic')) return 'kurtas';
+  if (lower.includes('dress') || lower.includes('gown')) return 'dresses';
+  if (lower.includes('jacket') || lower.includes('coat')) return 'jackets';
+  if (lower.includes('pant') || lower.includes('trouser')) return 'pants';
+  return 'shirts';
+};
 
 const FeaturedProducts = () => {
-  const featuredProducts = products.filter(p => p.featured && p.published).slice(0, 4);
+  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
 
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const res = await api.get<BackendProduct[]>('/orders/products');
+        const mappedProducts = res.data.map((p, index) => {
+          const makeAbsolute = (imgPath: string) => {
+            if (imgPath.startsWith('http://') || imgPath.startsWith('https://')) {
+              return imgPath;
+            }
+            return `${API_URL}${imgPath.startsWith('/') ? imgPath : '/' + imgPath}`;
+          };
+
+          let imageList: string[] = [];
+          if (p.images) {
+            imageList = p.images.split(',').map(img => makeAbsolute(img.trim())).filter(Boolean);
+          } else if (p.image_url) {
+            imageList = [makeAbsolute(p.image_url)];
+          }
+          
+          if (imageList.length === 0) {
+            imageList = [`https://placehold.co/600x800/e2e8f0/1e293b?text=${encodeURIComponent(p.name)}`];
+          }
+
+          return {
+            id: p.id.toString(),
+            name: p.name,
+            description: p.description || 'Premium quality apparel',
+            price: p.price,
+            tax: p.price * 0.18,
+            category: mapCategory(p.category),
+            type: mapType(p.category),
+            material: 'cotton' as const,
+            colors: ['White', 'Blue', 'Black'],
+            sizes: ['S', 'M', 'L', 'XL'],
+            stock: p.current_stock,
+            images: imageList,
+            featured: index % 2 === 0,
+            published: true
+          };
+        });
+
+        setFeaturedProducts(mappedProducts.filter(p => p.featured).slice(0, 4));
+      } catch (err) {
+        console.error('Failed to fetch products', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProducts();
+  }, []);
+
   // Auto-rotate carousel
   useEffect(() => {
-    if (!isAutoPlaying) return;
+    if (!isAutoPlaying || featuredProducts.length === 0) return;
     const interval = setInterval(() => {
       setActiveIndex((prev) => (prev + 1) % featuredProducts.length);
     }, 4000);
@@ -20,17 +120,20 @@ const FeaturedProducts = () => {
   }, [isAutoPlaying, featuredProducts.length]);
 
   const goNext = () => {
+    if (featuredProducts.length === 0) return;
     setIsAutoPlaying(false);
     setActiveIndex((prev) => (prev + 1) % featuredProducts.length);
   };
 
   const goPrev = () => {
+    if (featuredProducts.length === 0) return;
     setIsAutoPlaying(false);
     setActiveIndex((prev) => (prev - 1 + featuredProducts.length) % featuredProducts.length);
   };
 
   // Calculate position for each card (0 = front, 1 = right, 2 = back, 3 = left)
   const getCardStyle = (index: number) => {
+    if (featuredProducts.length === 0) return {};
     const position = (index - activeIndex + featuredProducts.length) % featuredProducts.length;
     
     const styles: Record<number, React.CSSProperties> = {
@@ -96,59 +199,69 @@ const FeaturedProducts = () => {
             onMouseEnter={() => setIsAutoPlaying(false)}
             onMouseLeave={() => setIsAutoPlaying(true)}
           >
-            {featuredProducts.map((product, index) => (
-              <div
-                key={product.id}
-                className="absolute w-[280px] md:w-[320px] transition-all duration-700 ease-out cursor-pointer"
-                style={{
-                  ...getCardStyle(index),
-                  transformStyle: 'preserve-3d',
-                }}
-                onClick={() => {
-                  const position = (index - activeIndex + featuredProducts.length) % featuredProducts.length;
-                  if (position === 1) goNext();
-                  else if (position === 3) goPrev();
-                }}
-              >
-                <ProductCard product={product} />
+            {loading ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="animate-pulse h-64 w-64 bg-muted rounded-lg"></div>
               </div>
-            ))}
+            ) : (
+              featuredProducts.map((product, index) => (
+                <div
+                  key={product.id}
+                  className="absolute w-[280px] md:w-[320px] transition-all duration-700 ease-out cursor-pointer"
+                  style={{
+                    ...getCardStyle(index),
+                    transformStyle: 'preserve-3d',
+                  }}
+                  onClick={() => {
+                    const position = (index - activeIndex + featuredProducts.length) % featuredProducts.length;
+                    if (position === 1) goNext();
+                    else if (position === 3) goPrev();
+                  }}
+                >
+                  <ProductCard product={product} />
+                </div>
+              ))
+            )}
           </div>
 
-          {/* Navigation Buttons */}
-          <button
-            onClick={goPrev}
-            className="absolute left-4 md:left-8 top-1/2 -translate-y-1/2 z-50 bg-background/90 backdrop-blur-sm border border-border rounded-full p-3 shadow-lg hover:bg-background hover:scale-110 transition-all"
-            aria-label="Previous product"
-          >
-            <ChevronLeft className="h-6 w-6" />
-          </button>
-          <button
-            onClick={goNext}
-            className="absolute right-4 md:right-8 top-1/2 -translate-y-1/2 z-50 bg-background/90 backdrop-blur-sm border border-border rounded-full p-3 shadow-lg hover:bg-background hover:scale-110 transition-all"
-            aria-label="Next product"
-          >
-            <ChevronRight className="h-6 w-6" />
-          </button>
-
-          {/* Dots Indicator */}
-          <div className="flex justify-center gap-2 mt-8">
-            {featuredProducts.map((_, index) => (
+          {!loading && featuredProducts.length > 0 && (
+            <>
+              {/* Navigation Buttons */}
               <button
-                key={index}
-                onClick={() => {
-                  setIsAutoPlaying(false);
-                  setActiveIndex(index);
-                }}
-                className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${
-                  index === activeIndex 
-                    ? 'bg-primary w-8' 
-                    : 'bg-muted-foreground/30 hover:bg-muted-foreground/50'
-                }`}
-                aria-label={`Go to product ${index + 1}`}
-              />
-            ))}
-          </div>
+                onClick={goPrev}
+                className="absolute left-4 md:left-8 top-1/2 -translate-y-1/2 z-50 bg-background/90 backdrop-blur-sm border border-border rounded-full p-3 shadow-lg hover:bg-background hover:scale-110 transition-all"
+                aria-label="Previous product"
+              >
+                <ChevronLeft className="h-6 w-6" />
+              </button>
+              <button
+                onClick={goNext}
+                className="absolute right-4 md:right-8 top-1/2 -translate-y-1/2 z-50 bg-background/90 backdrop-blur-sm border border-border rounded-full p-3 shadow-lg hover:bg-background hover:scale-110 transition-all"
+                aria-label="Next product"
+              >
+                <ChevronRight className="h-6 w-6" />
+              </button>
+
+              {/* Dots Indicator */}
+              <div className="flex justify-center gap-2 mt-8">
+                {featuredProducts.map((_, index) => (
+                  <button
+                    key={index}
+                    onClick={() => {
+                      setIsAutoPlaying(false);
+                      setActiveIndex(index);
+                    }}
+                    className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${
+                      index === activeIndex 
+                        ? 'bg-primary w-8' 
+                        : 'bg-muted-foreground/30 hover:bg-muted-foreground/50'
+                    }`}
+                    aria-label={`Go to product ${index + 1}`}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </section>

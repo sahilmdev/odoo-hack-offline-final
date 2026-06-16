@@ -6,7 +6,7 @@ import Layout from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/contexts/CartContext';
 import { toast } from 'sonner';
-import { api } from '@/lib/api';
+import { api, API_URL } from '@/lib/api';
 import {
   Carousel,
   CarouselContent,
@@ -86,12 +86,20 @@ const ProductDetail = () => {
         const backendProduct = res.data.find(p => p.id.toString() === id);
         
         if (backendProduct) {
+          // Helper to make image URL absolute
+          const makeAbsolute = (imgPath: string) => {
+            if (imgPath.startsWith('http://') || imgPath.startsWith('https://')) {
+              return imgPath;
+            }
+            return `${API_URL}${imgPath.startsWith('/') ? imgPath : '/' + imgPath}`;
+          };
+
           // Parse images from comma-separated string or use image_url
           let imageList: string[] = [];
           if (backendProduct.images) {
-            imageList = backendProduct.images.split(',').map(img => img.trim()).filter(Boolean);
+            imageList = backendProduct.images.split(',').map(img => makeAbsolute(img.trim())).filter(Boolean);
           } else if (backendProduct.image_url) {
-            imageList = [backendProduct.image_url];
+            imageList = [makeAbsolute(backendProduct.image_url)];
           }
           
           // Fallback to placeholders if no images
