@@ -51,6 +51,8 @@ app.add_middleware(
 @app.on_event("startup")
 async def on_startup():
     await init_db()
+    # Auto-seed the database if it's empty
+    await seed_database()
 
 app.include_router(auth_router)
 app.include_router(orders_router)
